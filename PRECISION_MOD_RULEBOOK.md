@@ -13,7 +13,7 @@ PRECISION-MOD (Precision-checked Engineering Change Rules, Intent, Safety, I/O, 
 
 **Canonical location:** this rulebook must live at `AI_Guidelines/PRECISION_MOD_RULEBOOK.md` and may be mirrored at the repository root only when explicitly requested by the user.
 
-**Rulebook updates:** newer versions are available at https://github.com/D2duplo/precision-mod/blob/main/precision-mod.md and must only be pulled/merged when the user explicitly requests an update.
+**Rulebook updates:** newer versions are available at https://github.com/D2duplo/precision-mod/blob/main/PRECISION_MOD_RULEBOOK.md and must only be pulled/merged when the user explicitly requests an update.
 
 **Agent initialization text (must be mirrored in Agents.md / CLAUDE.md / GEMINI.md):**
 ```
