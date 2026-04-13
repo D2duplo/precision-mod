@@ -19,7 +19,7 @@ Precision-MOD provides a single source of truth for engineering constraints that
 | **Hard-locks** | Non-negotiable constraints enforced by hooks and agent instructions |
 | **Planning discipline** | Formal task lifecycle: planned, queued, in_progress, completed |
 | **Git safety** | 3-tier command classification (ALLOWED / AUTHORIZED / FORBIDDEN) with hook enforcement |
-| **Credential management** | Never-leak policy with external secret managers (OpenBao, Vault, 1Password CLI, AWS Secrets Manager) |
+| **Credential management** | OpenBao-based secret management (AES-256-GCM, file-based, offline). Includes setup, migration from plaintext, and team sharing. Alternative backends supported. |
 | **Session persistence** | Multi-host, multi-agent session logs with identity tracking (host, user, agent_type, model) |
 | **Documentation standards** | Conventional Commits, planning journal, filetree index |
 
@@ -28,7 +28,7 @@ Precision-MOD provides a single source of truth for engineering constraints that
 | Area | v1.x | v2.0.0 |
 |---|---|---|
 | Git safety | Blanket forbidden list (instructions only) | 3-tier classification with deterministic hook enforcement |
-| Credentials | No formal policy | Hard-lock rules for external secret managers; secrets never stored in files |
+| Credentials | No formal policy | OpenBao integrated (setup, migration from plaintext, team sharing). Encrypted vault in repo, master key out-of-band |
 | Session logs | Single-agent, no identity | Multi-host/multi-agent with identity fields; merge-safe for teams |
 | Obsidian integration | None | Optional -- repo can double as an Obsidian vault (`.obsidian/` in `.gitignore`) |
 | Cross-agent skills | None | `.ai/commands/` as canonical skills directory, indexed in `AI_SKILLS/INDEX.md` |
@@ -56,11 +56,21 @@ your-project/
 ├── AI_Guidelines/
 │   ├── precision-mod-upstream/      <- this repo (submodule or clone)
 │   │   ├── PRECISION_MOD_RULEBOOK.md
-│   │   ├── README.md
-│   │   └── AI_INSTALL.md
+│   │   ├── AI_INSTALL.md
+│   │   ├── docs/credential-management.md
+│   │   └── scripts/
+│   │       ├── install.sh
+│   │       ├── setup-openbao.sh     <- credential manager setup
+│   │       ├── migrate-credentials.sh <- migrate plaintext to OpenBao
+│   │       ├── setup-obsidian.sh
+│   │       ├── vault-autocommit.sh
+│   │       └── git-safe.sh
 │   ├── codebase_rules.md            <- your project-specific rules
 │   └── hooks/
 │       └── git-safe.sh              <- optional enforcement hook
+├── .openbao/                        <- encrypted credentials (committed)
+│   ├── config.hcl
+│   └── data/                        <- AES-256-GCM encrypted
 ├── AI_SKILLS/
 │   └── INDEX.md
 ├── AI_tasks/
@@ -85,11 +95,11 @@ your-project/
 
 | Tier | Examples | Policy |
 |---|---|---|
-| ALLOWED | `status`, `log`, `diff`, `add`, `commit`, `push`, `pull`, `fetch`, `branch`, `switch`, `stash` | Always permitted |
-| AUTHORIZED | `rebase`, `reset --soft`, `cherry-pick`, `push --force-with-lease` | Require explicit user authorization per invocation |
-| FORBIDDEN | `push --force` (to main/master), `reset --hard`, `clean -fdx`, `filter-branch` | Blocked unconditionally; enforced by hooks |
+| ALLOWED | `status`, `log`, `diff`, `add`, `commit`, `checkout`, `stash`, `branch`, `blame`, `show`, `describe`, `ls-files` | Always permitted |
+| AUTHORIZED | `push`, `pull`, `merge`, `rebase`, `cherry-pick`, `revert`, `tag`, `checkout -- <file>`, `branch -d/-D` | Require explicit user authorization per invocation |
+| FORBIDDEN | `push --force` (without `--force-with-lease`), `reset --hard`, `clean -fdx`, `filter-branch`, `checkout -- .`, `restore .` | Blocked unconditionally; enforced by hooks |
 
-**Secrets never touch files.** Credentials are retrieved at runtime from external secret managers. No `.env` files, no hardcoded tokens, no secrets in commit history.
+**Secrets never touch files.** Credentials are managed by OpenBao — an open-source, offline-capable secret manager with AES-256-GCM encryption. The encrypted vault (`.openbao/data/`) is committed to the repo; the master key stays out-of-band. Agents retrieve credentials at runtime via `bao kv get`. Existing plaintext credentials can be migrated with `scripts/migrate-credentials.sh`.
 
 **Sessions survive context resets.** Each agent writes a session log with identity fields so that any agent (or the same agent after a context window reset) can resume work.
 

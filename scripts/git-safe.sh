@@ -38,36 +38,37 @@ GIT_CMD=$(echo "$INPUT" | sed -E 's/.*git\s+//' | awk '{print $1}')
 
 # git reset --hard
 if echo "$INPUT" | grep -qE 'git\s+reset\s+--hard'; then
-  echo "BLOCKED by Precision-MOD: 'git reset --hard' is FORBIDDEN (Tier 3)."
-  echo "This command destroys uncommitted work irrecoverably."
-  echo "Alternative: use 'git stash' to save work, or 'git checkout -- <file>' for specific files."
+  echo '{"decision": "block", "reason": "BLOCKED by Precision-MOD: git reset --hard is FORBIDDEN (Tier 3). Destroys uncommitted work irrecoverably. Alternative: use git stash or git checkout -- <file>."}'
   exit 2
 fi
 
-# git push --force to main/master (but allow --force-with-lease on feature branches)
+# git push --force (without --force-with-lease) — FORBIDDEN on any branch
 if echo "$INPUT" | grep -qE 'git\s+push\s+.*--force' && ! echo "$INPUT" | grep -qE '--force-with-lease'; then
-  # Check if pushing to main/master
-  if echo "$INPUT" | grep -qE '(main|master)'; then
-    echo "BLOCKED by Precision-MOD: 'git push --force' to main/master is FORBIDDEN (Tier 3)."
-    echo "This rewrites shared history and can cause data loss for all collaborators."
-    echo "Alternative: create a revert commit with 'git revert'."
-    exit 2
-  fi
+  echo '{"decision": "block", "reason": "BLOCKED by Precision-MOD: git push --force is FORBIDDEN (Tier 3). Only --force-with-lease is allowed (Tier 2, feature branches only). Alternative: use git push --force-with-lease."}'
+  exit 2
 fi
 
 # git clean -fd / -f
 if echo "$INPUT" | grep -qE 'git\s+clean\s+-[a-z]*f'; then
-  echo "BLOCKED by Precision-MOD: 'git clean -f' is FORBIDDEN (Tier 3)."
-  echo "This deletes untracked files irrecoverably."
-  echo "Alternative: review files with 'git clean -n' (dry run) first, then delete manually."
+  echo '{"decision": "block", "reason": "BLOCKED by Precision-MOD: git clean -f is FORBIDDEN (Tier 3). Deletes untracked files irrecoverably. Alternative: review with git clean -n (dry run) first, then delete manually."}'
   exit 2
 fi
 
 # git checkout -- . (discard ALL changes)
 if echo "$INPUT" | grep -qE 'git\s+checkout\s+--\s+\.'; then
-  echo "BLOCKED by Precision-MOD: 'git checkout -- .' is FORBIDDEN (Tier 3)."
-  echo "This discards ALL local changes irrecoverably."
-  echo "Alternative: use 'git checkout -- <specific-file>' for individual files."
+  echo '{"decision": "block", "reason": "BLOCKED by Precision-MOD: git checkout -- . is FORBIDDEN (Tier 3). Discards ALL local changes irrecoverably. Alternative: use git checkout -- <specific-file> for individual files."}'
+  exit 2
+fi
+
+# git filter-branch (rewrites repository history)
+if echo "$INPUT" | grep -qE 'git\s+filter-branch'; then
+  echo '{"decision": "block", "reason": "BLOCKED by Precision-MOD: git filter-branch is FORBIDDEN (Tier 3). Rewrites repository history. Alternative: use git filter-repo (separate tool) with explicit user approval."}'
+  exit 2
+fi
+
+# git restore . (discard ALL changes — modern equivalent of checkout -- .)
+if echo "$INPUT" | grep -qE 'git\s+restore\s+\.'; then
+  echo '{"decision": "block", "reason": "BLOCKED by Precision-MOD: git restore . is FORBIDDEN (Tier 3). Discards ALL local changes irrecoverably (modern equivalent of git checkout -- .). Alternative: use git restore <specific-file> for individual files."}'
   exit 2
 fi
 

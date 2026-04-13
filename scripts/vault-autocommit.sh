@@ -33,8 +33,8 @@ ONCE=false
 DRY_RUN=false
 LOCKFILE="$REPO_ROOT/.vault-autocommit.lock"
 
-for arg in "$@"; do
-  case "$arg" in
+while [ $# -gt 0 ]; do
+  case "$1" in
     --interval) shift; INTERVAL="${1:-900}" ;;
     --daemon)   DAEMON=true ;;
     --once)     ONCE=true ;;
@@ -44,7 +44,7 @@ for arg in "$@"; do
       exit 0
       ;;
   esac
-  shift 2>/dev/null || true
+  shift
 done
 
 # Patterns to auto-commit (documentation and session data only)

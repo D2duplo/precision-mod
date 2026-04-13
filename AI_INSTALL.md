@@ -349,38 +349,88 @@ Codex CLI reads `AGENTS.md` natively. No additional configuration file is requir
 
 ---
 
-## 7. Optional: Credential Management
+## 7. Credential Management with OpenBao
 
-Precision-MOD enforces a hard constraint: **never store secrets in files**. If the project handles credentials, configure a secret manager.
+Precision-MOD uses **OpenBao** as its default credential manager. OpenBao is an open-source fork of HashiCorp Vault (post-BSL license change), providing AES-256-GCM encryption with file-based storage — no database or cloud dependency required.
 
-### 7.1 Setup Steps
+For the full guide, see `docs/credential-management.md`.
 
-1. **Install and configure the secret manager:**
-   - OpenBao/HashiCorp Vault: `brew install openbao` or equivalent.
-   - 1Password CLI: `brew install 1password-cli`.
-   - AWS Secrets Manager: configure via `aws configure`.
+### 7.1 Automated Setup
 
-2. **Add credential paths to `AI_Guidelines/codebase_rules.md`:**
-   ```markdown
-   ## Credential Paths
+Run the setup script to install and configure OpenBao:
 
-   | Path | Service | Fields |
-   |---|---|---|
-   | `OpenBao homelab/unifi` | UniFi Controller | username, password |
-   | `OpenBao homelab/checkmk/admin` | Checkmk | username, password, url |
-   ```
+```bash
+bash AI_Guidelines/precision-mod-upstream/scripts/setup-openbao.sh
+```
 
-3. **Add a bootstrap check to the session start workflow.** In `AGENTS.md`, instruct agents to verify the secret manager is accessible:
-   ```markdown
-   ## Credentials
-   Backend: OpenBao at `http://127.0.0.1:8200`.
-   Bootstrap: run `~/.openbao/start.sh` if not running.
-   At session start, verify with `bao status`.
-   ```
+This will:
+- Install OpenBao (brew on macOS, package manager on Linux)
+- Create `.openbao/config.hcl` in the repo (file storage backend)
+- Create `~/.openbao/start.sh` (auto-unseal startup script)
+- Initialize the vault, save master key to `~/.openbao/init-keys.json`
+- Create a KV v2 secret engine
 
-4. **In all documentation, reference credentials by path, never by value:**
-   - Correct: `OpenBao homelab/unifi`
-   - Wrong: `password: s3cr3t123`
+### 7.2 Migrate Existing Plaintext Credentials
+
+If the codebase already has hardcoded credentials (`.env` files, AGENTS.md, code), run:
+
+```bash
+# Scan only (no changes)
+bash AI_Guidelines/precision-mod-upstream/scripts/migrate-credentials.sh --scan-only
+
+# Interactive migration
+bash AI_Guidelines/precision-mod-upstream/scripts/migrate-credentials.sh
+
+# Batch migration with mapping file
+bash AI_Guidelines/precision-mod-upstream/scripts/migrate-credentials.sh --batch migrate-map.txt
+```
+
+The script scans for credential patterns, helps store them in OpenBao, and replaces plaintext values with `OpenBao <path>` references.
+
+### 7.3 Configure for Your Project
+
+Add credential paths to `AI_Guidelines/codebase_rules.md`:
+
+```markdown
+## Credential Management
+
+**Backend:** OpenBao at `http://127.0.0.1:8200`
+**Bootstrap:** `~/.openbao/start.sh`
+
+| Path | Service | Fields |
+|---|---|---|
+| `project/database` | MySQL | username, password, host |
+| `project/api` | External API | api_key, secret |
+```
+
+### 7.4 Agent Instructions
+
+In `AGENTS.md`, add:
+
+```markdown
+## Credentials — OpenBao (MANDATORY)
+
+NEVER store secrets in files. All credentials in OpenBao.
+
+\`\`\`bash
+~/.openbao/start.sh                          # start if not running
+export BAO_ADDR=http://127.0.0.1:8200
+bao kv get -field=password <path>            # read
+bao kv put <path> username=x password=y      # write
+\`\`\`
+
+Reference in docs as: `OpenBao <path>`
+```
+
+### 7.5 Team Sharing
+
+The encrypted vault (`.openbao/data/`) is safe to commit — anyone who clones the repo gets the encrypted data. To access secrets, team members need the master key, shared securely out-of-band (1Password, Signal, in-person).
+
+### 7.6 Security Notes
+
+- **Protected:** data at rest (AES-256-GCM encryption in `.openbao/data/`)
+- **NOT protected:** data in memory while vault is unsealed; any process on the same machine can read secrets via the API while running
+- **Git history:** after migrating from plaintext, old values remain in git history. Use `git filter-repo` or `bfg` to clean if needed
 
 ---
 
@@ -499,141 +549,16 @@ When the repository is also used as an Obsidian knowledge base.
 
 The git safety hook enforces the three-tier git command classification as a `PreToolUse` hook. This provides deterministic, 100% compliance -- the agent cannot bypass the rules even if instructed to.
 
-### 10.1 Create the Hook Script
+### 10.1 Install the Hook Script
 
-Create `AI_Guidelines/hooks/git-safe.sh`:
-
-```bash
-#!/usr/bin/env bash
-# Precision-MOD Git Safety Hook (PreToolUse)
-# Enforces three-tier git command classification from Section 2.1.
-#
-# Exit codes:
-#   0 = allow (Tier 1) or non-git command
-#   2 = block (Tier 3 forbidden command)
-#
-# For Tier 2 commands: the hook allows them (exit 0) but prints a
-# warning. The agent's own instructions handle the confirmation prompt.
-# To enforce Tier 2 blocking, change the exit code to 2 in the
-# TIER 2 section below.
-
-set -euo pipefail
-
-TOOL_INPUT="${1:-}"
-
-# Extract the command from the tool input JSON.
-# Handles both {"command": "..."} and raw strings.
-if command -v jq &>/dev/null; then
-  CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null || echo "$TOOL_INPUT")
-else
-  CMD="$TOOL_INPUT"
-fi
-
-# If not a git command, allow.
-if ! echo "$CMD" | grep -qE '^\s*git\s+'; then
-  exit 0
-fi
-
-# --- TIER 3: FORBIDDEN (block unconditionally) ---
-
-# git reset --hard
-if echo "$CMD" | grep -qE 'git\s+reset\s+--hard'; then
-  echo "BLOCKED by Precision-MOD: 'git reset --hard' is a Tier 3 forbidden command."
-  echo "It destroys uncommitted work irrecoverably."
-  echo "Alternative: use 'git stash' to save work, or 'git checkout -- <file>' for specific files."
-  exit 2
-fi
-
-# git push --force to main/master
-if echo "$CMD" | grep -qE 'git\s+push\s+--force\s.*(main|master)'; then
-  echo "BLOCKED by Precision-MOD: 'git push --force' to main/master is a Tier 3 forbidden command."
-  echo "It rewrites shared history."
-  echo "Alternative: use 'git push --force-with-lease' on a feature branch."
-  exit 2
-fi
-
-# git clean -fd / -f
-if echo "$CMD" | grep -qE 'git\s+clean\s+-[a-zA-Z]*f'; then
-  echo "BLOCKED by Precision-MOD: 'git clean -f' is a Tier 3 forbidden command."
-  echo "It deletes untracked files irrecoverably."
-  echo "Alternative: review untracked files with 'git status' and remove manually."
-  exit 2
-fi
-
-# git checkout -- . (discard ALL local changes)
-if echo "$CMD" | grep -qE 'git\s+checkout\s+--\s+\.'; then
-  echo "BLOCKED by Precision-MOD: 'git checkout -- .' is a Tier 3 forbidden command."
-  echo "It discards ALL local changes."
-  echo "Alternative: use 'git checkout -- <specific-file>' for individual files (Tier 2, requires confirmation)."
-  exit 2
-fi
-
-# --- TIER 2: AUTHORIZED (warn, allow by default) ---
-# Uncomment 'exit 2' lines below to enforce blocking for Tier 2 commands.
-
-if echo "$CMD" | grep -qE 'git\s+push'; then
-  echo "WARNING (Precision-MOD Tier 2): 'git push' affects the remote. Confirm branch and remote before proceeding."
-  # exit 2
-  exit 0
-fi
-
-if echo "$CMD" | grep -qE 'git\s+pull'; then
-  echo "WARNING (Precision-MOD Tier 2): 'git pull' may introduce merge conflicts."
-  # exit 2
-  exit 0
-fi
-
-if echo "$CMD" | grep -qE 'git\s+merge'; then
-  echo "WARNING (Precision-MOD Tier 2): 'git merge' combines branches. Confirm the target branch."
-  # exit 2
-  exit 0
-fi
-
-if echo "$CMD" | grep -qE 'git\s+rebase'; then
-  echo "WARNING (Precision-MOD Tier 2): 'git rebase' rewrites history. Confirm scope."
-  # exit 2
-  exit 0
-fi
-
-if echo "$CMD" | grep -qE 'git\s+cherry-pick'; then
-  echo "WARNING (Precision-MOD Tier 2): 'git cherry-pick' imports commits. Confirm selection."
-  # exit 2
-  exit 0
-fi
-
-if echo "$CMD" | grep -qE 'git\s+revert'; then
-  echo "WARNING (Precision-MOD Tier 2): 'git revert' creates undo commits. Confirm scope."
-  # exit 2
-  exit 0
-fi
-
-if echo "$CMD" | grep -qE 'git\s+tag'; then
-  echo "WARNING (Precision-MOD Tier 2): 'git tag' creates a reference. Confirm name."
-  # exit 2
-  exit 0
-fi
-
-if echo "$CMD" | grep -qE 'git\s+checkout\s+--\s+'; then
-  echo "WARNING (Precision-MOD Tier 2): 'git checkout -- <file>' discards local changes to file. Confirm."
-  # exit 2
-  exit 0
-fi
-
-if echo "$CMD" | grep -qE 'git\s+branch\s+-[dD]'; then
-  echo "WARNING (Precision-MOD Tier 2): 'git branch -d/-D' deletes a branch. Confirm name."
-  # exit 2
-  exit 0
-fi
-
-# --- TIER 1: ALLOWED (no action needed) ---
-exit 0
-```
-
-Make it executable:
+Copy the reference implementation to your project:
 
 ```bash
+cp AI_Guidelines/precision-mod-upstream/scripts/git-safe.sh AI_Guidelines/hooks/git-safe.sh
 chmod +x AI_Guidelines/hooks/git-safe.sh
 ```
+
+The reference implementation is at `scripts/git-safe.sh` in this repository. It handles all three tiers with JSON output for forward compatibility with Claude Code hooks.
 
 ### 10.2 Register the Hook
 
@@ -648,7 +573,8 @@ For **Claude Code**, add the hook to `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "bash AI_Guidelines/hooks/git-safe.sh \"$TOOL_INPUT\""
+            "command": "bash AI_Guidelines/hooks/git-safe.sh \"$TOOL_INPUT\"",
+            "timeout": 10
           }
         ]
       }

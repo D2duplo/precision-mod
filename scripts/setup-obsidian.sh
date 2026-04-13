@@ -15,8 +15,8 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 MCP_PORT=22360
 MCP_NAME="obsidian-vault"
 
-for arg in "$@"; do
-  case "$arg" in
+while [ $# -gt 0 ]; do
+  case "$1" in
     --port)      shift; MCP_PORT="${1:-22360}" ;;
     --mcp-name)  shift; MCP_NAME="${1:-obsidian-vault}" ;;
     --help|-h)
@@ -27,7 +27,7 @@ for arg in "$@"; do
       exit 0
       ;;
   esac
-  shift 2>/dev/null || true
+  shift
 done
 
 echo "=== Precision-MOD — Obsidian Vault Setup ==="

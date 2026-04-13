@@ -99,6 +99,8 @@ Git commands are classified in three tiers. This replaces the blanket "forbidden
 | `git push --force` to `main`/`master` | Rewrites shared history |
 | `git clean -fd` | Deletes untracked files irrecoverably |
 | `git checkout -- .` | Discards ALL local changes |
+| `git restore .` | Discards ALL local changes (modern equivalent of checkout -- .) |
+| `git filter-branch` | Rewrites repository history |
 
 **Enforcement:** These rules SHOULD be enforced by a `PreToolUse` hook (deterministic, 100% compliance) in addition to agent instructions. See `AI_Guidelines/hooks/git-safe.sh` for a reference implementation.
 
@@ -110,11 +112,27 @@ Git commands are classified in three tiers. This replaces the blanket "forbidden
 ### 2.2 Credential Management (HARD-LOCK)
 
 - **NEVER store secrets in files** — no passwords, tokens, API keys, or certificates in any markdown, `.env`, code, commit message, or documentation note.
-- **Credential backend:** use the project's configured secret manager (e.g., OpenBao/Vault, 1Password CLI, AWS Secrets Manager). The specific backend is defined in `AI_Guidelines/codebase_rules.md`.
-- **Bootstrap check:** at session start, verify the secret manager is accessible. If not, instruct the user on how to start it.
-- **In documentation:** reference credentials as `<backend> <path>` (e.g., `OpenBao homelab/unifi`), never the actual value.
-- **Encrypted credential storage** (e.g., `.openbao/data/`) that uses AES-256-GCM or equivalent is safe to commit. Unencrypted init keys, tokens, or master keys are NEVER committed.
+- **Credential backend: OpenBao** (recommended). OpenBao is an open-source secret manager (AES-256-GCM encryption, file-based storage, single binary, works offline). Alternative backends (HashiCorp Vault, 1Password CLI, AWS Secrets Manager) are supported — configure in `AI_Guidelines/codebase_rules.md`.
+- **Architecture:**
+  - `.openbao/data/` in the repo — encrypted at rest, **safe to commit**
+  - `~/.openbao/init-keys.json` in home directory — master key, **NEVER committed**
+  - Anyone who clones the repo gets the encrypted vault; the master key is shared securely out-of-band
+- **Bootstrap check:** at session start, verify OpenBao is running and unsealed:
+  ```bash
+  export BAO_ADDR=http://127.0.0.1:8200
+  bao status 2>/dev/null | head -3
+  ```
+  If sealed or not running, instruct the user to run `~/.openbao/start.sh`.
+- **Daily usage:**
+  ```bash
+  bao kv get -field=password <path>          # read
+  bao kv put <path> username=x password=y    # write
+  bao kv list <mount>/                       # list
+  ```
+- **In documentation:** reference credentials as `OpenBao <path>` (e.g., `OpenBao homelab/unifi`), never the actual value.
 - **Credential leak prevention:** agents SHOULD implement a `PreToolUse` hook that blocks commands containing credential patterns (e.g., `echo.*password`, `curl.*-d.*password`, `cat.*\.env`).
+- **Migration from plaintext:** use `scripts/migrate-credentials.sh` to scan the codebase for hardcoded credentials and migrate them to OpenBao. See `docs/credential-management.md` for the full guide.
+- **Setup:** run `scripts/setup-openbao.sh` to install and configure OpenBao for a new project.
 
 ## 3. Bugfix Policy
 - **Small bugfix:** minimal, safe change with no structural refactor.
@@ -199,9 +217,9 @@ Git commands are classified in three tiers. This replaces the blanket "forbidden
 - Language/framework-specific conventions belong in `AI_Guidelines/codebase_rules.md`, not here.
 
 ## 8. MCP Usage
-- **chrome-devtools** MCP is required for smoke tests.
-- **Context7** is required during the planning phase (documentation/validation).
-- MCP availability may vary; detect dynamically and fail clearly when required MCPs are missing.
+- **chrome-devtools** MCP is recommended for smoke tests when available. Configure in `AI_Guidelines/codebase_rules.md` per project.
+- **Context7** is recommended during the planning phase (documentation/validation) when available. Configure in `AI_Guidelines/codebase_rules.md` per project.
+- MCP availability may vary; detect dynamically and degrade gracefully when MCPs are unavailable.
 - Smoke tests may run headless; only require a visible browser when explicitly requested.
 
 ## 9. To-do Rules (HARD-LOCK)
@@ -316,7 +334,7 @@ When the repository is also used as an Obsidian vault:
 - **Versioning scheme:** changed from patch-only (1.0.x) to semantic versioning.
 
 **New sections:**
-- **Section 2.2 — Credential Management:** hard-lock rules for secret management. Never store secrets in files. Use configured backend (OpenBao/Vault/etc.). Encrypted stores are safe to commit; plaintext keys never.
+- **Section 2.2 — Credential Management:** OpenBao as default secret manager. Hard-lock rules: never store secrets in files, encrypted vault in repo, master key out-of-band. Includes setup script, migration from plaintext, and team sharing guide (`docs/credential-management.md`).
 - **Section 12 — Session Persistence:** session logs with multi-host/multi-agent identification. Filename includes host, agent type, and topic for merge-safe collaboration. Mandatory frontmatter with identity fields.
 - **Section 13 — Obsidian Vault Integration:** optional section for repos that double as Obsidian vaults. `.obsidian/` in `.gitignore`, docs next to code, MCP fallback.
 
