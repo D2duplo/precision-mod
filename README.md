@@ -1,6 +1,6 @@
 # Precision-MOD
 
-**`v2.0.0`** | Apache-2.0 | [Rulebook](PRECISION_MOD_RULEBOOK.md) | [Installation Guide](AI_INSTALL.md)
+**`v2.1.0`** | Apache-2.0 | [Rulebook](PRECISION_MOD_RULEBOOK.md) | [Installation Guide](AI_INSTALL.md)
 
 ---
 
@@ -19,9 +19,19 @@ Precision-MOD provides a single source of truth for engineering constraints that
 | **Hard-locks** | Non-negotiable constraints enforced by hooks and agent instructions |
 | **Planning discipline** | Formal task lifecycle: planned, queued, in_progress, completed |
 | **Git safety** | 3-tier command classification (ALLOWED / AUTHORIZED / FORBIDDEN) with hook enforcement |
-| **Credential management** | OpenBao-based secret management (AES-256-GCM, file-based, offline). Includes setup, migration from plaintext, and team sharing. Alternative backends supported. |
+| **Credential management** | Hard-lock: no plaintext secrets in tracked files. Backend (OpenBao, HashiCorp Vault, 1Password / Bitwarden CLI, AWS / GCP / Azure Secrets Manager, system keychain) is optional and project-specific. OpenBao reference scripts included for projects that want it. |
 | **Session persistence** | Multi-host, multi-agent session logs with identity tracking (host, user, agent_type, model) |
 | **Documentation standards** | Conventional Commits, planning journal, filetree index |
+
+## What changed in v2.1.0
+
+| Area | v2.0.0 | v2.1.0 |
+|---|---|---|
+| Credential backend | OpenBao framed as default; "alternative backends supported" was a footnote | Backend choice is **optional and project-specific**. Hard-lock is "no plaintext secrets in tracked files"; OpenBao is one of several supported options (HashiCorp Vault, 1Password / Bitwarden CLI, cloud Secrets Managers, system keychain) and stays the recommended reference implementation |
+| Bootstrap | OpenBao implied in canonical project structure (`/.openbao/`) | OpenBao is opt-in; default install path no longer touches it |
+| `docs/credential-management.md` | Read as the credential-management guide | Read as the OpenBao-specific guide, with pointers to alternatives |
+
+Non-breaking: existing OpenBao adopters need no changes.
 
 ## What changed in v2.0.0
 
@@ -60,17 +70,14 @@ your-project/
 │   │   ├── docs/credential-management.md
 │   │   └── scripts/
 │   │       ├── install.sh
-│   │       ├── setup-openbao.sh     <- credential manager setup
-│   │       ├── migrate-credentials.sh <- migrate plaintext to OpenBao
+│   │       ├── setup-openbao.sh     <- optional: only if using OpenBao
+│   │       ├── migrate-credentials.sh <- optional: OpenBao migration helper
 │   │       ├── setup-obsidian.sh
 │   │       ├── vault-autocommit.sh
 │   │       └── git-safe.sh
 │   ├── codebase_rules.md            <- your project-specific rules
 │   └── hooks/
 │       └── git-safe.sh              <- optional enforcement hook
-├── .openbao/                        <- encrypted credentials (committed)
-│   ├── config.hcl
-│   └── data/                        <- AES-256-GCM encrypted
 ├── AI_SKILLS/
 │   └── INDEX.md
 ├── AI_tasks/
@@ -84,6 +91,8 @@ your-project/
 ├── filetree.md
 └── planning_journal.md
 ```
+
+> **Optional add-on — OpenBao vault.** If the project chooses OpenBao as its secret backend, an additional `.openbao/` directory holds the encrypted vault (`config.hcl` + `data/`, AES-256-GCM, safe to commit). Run `scripts/setup-openbao.sh` to provision it. Other backends (HashiCorp Vault, 1Password, cloud Secrets Managers, system keychain) leave no extra directory in the repo.
 
 ## Core principles
 
@@ -99,7 +108,7 @@ your-project/
 | AUTHORIZED | `push`, `pull`, `merge`, `rebase`, `cherry-pick`, `revert`, `tag`, `checkout -- <file>`, `branch -d/-D` | Require explicit user authorization per invocation |
 | FORBIDDEN | `push --force` (without `--force-with-lease`), `reset --hard`, `clean -fdx`, `filter-branch`, `checkout -- .`, `restore .` | Blocked unconditionally; enforced by hooks |
 
-**Secrets never touch files.** Credentials are managed by OpenBao — an open-source, offline-capable secret manager with AES-256-GCM encryption. The encrypted vault (`.openbao/data/`) is committed to the repo; the master key stays out-of-band. Agents retrieve credentials at runtime via `bao kv get`. Existing plaintext credentials can be migrated with `scripts/migrate-credentials.sh`.
+**No plaintext secrets in tracked files.** This is the hard-lock. The backend you use to keep that promise — OpenBao, HashiCorp Vault, 1Password / Bitwarden CLI, a cloud Secrets Manager, the system keychain, or a `.gitignore`d `.env` — is the project's choice and is documented in `AI_Guidelines/codebase_rules.md`. Precision-MOD ships an OpenBao reference (setup script, migration tool, full guide) for projects that want a turnkey self-hosted vault, but no backend is required out of the box.
 
 **Sessions survive context resets.** Each agent writes a session log with identity fields so that any agent (or the same agent after a context window reset) can resume work.
 

@@ -1,5 +1,7 @@
 # Credential Management with OpenBao
 
+> **OpenBao is one of several supported backends — and it is optional.** The Precision-MOD hard-lock (Rulebook §2.2) is "no plaintext secrets in tracked files". The choice of *how* you keep that promise is up to the project. OpenBao is the reference implementation Precision-MOD ships scripts for, but HashiCorp Vault, 1Password CLI / Bitwarden CLI, AWS / GCP / Azure Secrets Manager, or the system keychain are all equally valid. Pick whatever fits your threat model and operational constraints, and document the choice in `AI_Guidelines/codebase_rules.md`. This guide covers the OpenBao option specifically.
+
 ## Table of Contents
 
 1. [Why OpenBao](#why-openbao)

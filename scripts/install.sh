@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Precision-MOD v2.0.0 — Installation Script
+# Precision-MOD v2.1.0 — Installation Script
 # Usage: bash AI_Guidelines/precision-mod-upstream/scripts/install.sh [--with-obsidian] [--with-hooks]
 #
 # Bootstraps the Precision-MOD directory structure, creates required files,
@@ -28,7 +28,7 @@ for arg in "$@"; do
   esac
 done
 
-echo "=== Precision-MOD v2.0.0 — Bootstrap ==="
+echo "=== Precision-MOD v2.1.0 — Bootstrap ==="
 echo "Repo root: $REPO_ROOT"
 echo ""
 
@@ -78,13 +78,25 @@ Project-specific rules. Supplements `PRECISION_MOD_RULEBOOK.md`.
 <!-- Which directories are editable, which are forbidden -->
 
 ## 4. Credential Management
-<!-- Secret manager backend, paths, bootstrap commands -->
-<!-- Example for OpenBao:
+<!-- OPTIONAL — only if this project handles secrets.
+     Hard-lock: no plaintext secrets in tracked files.
+     Backend choice is project-specific (OpenBao, HashiCorp Vault,
+     1Password / Bitwarden CLI, AWS / GCP / Azure Secrets Manager,
+     system keychain, .gitignore'd .env). Document the chosen backend,
+     bootstrap commands, and paths/items below. -->
+<!-- Example (OpenBao):
 **Backend:** OpenBao
 ```bash
 ~/.openbao/start.sh           # bootstrap
 export BAO_ADDR=http://127.0.0.1:8200
 bao kv get -field=password <path>
+```
+-->
+<!-- Example (1Password CLI):
+**Backend:** 1Password CLI (`op`) — vault `Eng/Prod`
+```bash
+op signin                                      # bootstrap
+op item get "Eng/Prod/DB" --fields password
 ```
 -->
 
@@ -148,7 +160,7 @@ if [ ! -f "$REPO_ROOT/planning_journal.md" ]; then
   echo "# Planning Journal" > "$REPO_ROOT/planning_journal.md"
   echo "" >> "$REPO_ROOT/planning_journal.md"
   echo "## $(date +%Y-%m-%d)" >> "$REPO_ROOT/planning_journal.md"
-  echo "- **Summary:** Precision-MOD v2.0.0 bootstrapped" >> "$REPO_ROOT/planning_journal.md"
+  echo "- **Summary:** Precision-MOD v2.1.0 bootstrapped" >> "$REPO_ROOT/planning_journal.md"
   echo "- **Next:** Configure codebase_rules.md for this project" >> "$REPO_ROOT/planning_journal.md"
   echo "  Created planning_journal.md"
 fi
@@ -166,7 +178,7 @@ If `pre_compact_task_progress.md` exists, read it first (before any other action
 
 ## Precision-MOD
 
-Rulebook at `AI_Guidelines/PRECISION_MOD_RULEBOOK.md` (v2.0.0). Project rules at `AI_Guidelines/codebase_rules.md`.
+Rulebook at `AI_Guidelines/PRECISION_MOD_RULEBOOK.md` (v2.1.0). Project rules at `AI_Guidelines/codebase_rules.md`.
 
 ## Session Persistence
 

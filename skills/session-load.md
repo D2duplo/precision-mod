@@ -59,7 +59,7 @@ If a keyword was passed (e.g., `/session-load auth`), in addition to the last N:
 ## Context loaded
 
 **AGENTS.md:** ✓
-**Precision-MOD:** ✓ v2.0.0
+**Precision-MOD:** ✓ v2.1.0
 **Credential manager:** ✓ running | ⚠️ sealed | ✗ not running
 **Active plan:** AI_tasks/in_progress/20260413_xxx.md (Phase 2/3) | None
 **Session logs:** N found, M loaded

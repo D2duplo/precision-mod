@@ -1,6 +1,6 @@
 # PRECISION-MOD Rulebook
 
-**Version:** 2.0.0
+**Version:** 2.1.0
 
 ## 1. Overview
 PRECISION-MOD (Precision-checked Engineering Change Rules, Intent, Safety, I/O, Operations, and Non-negotiable Modifications) is a hard-lock verification system, a tool-consolidation gateway, a single-source-of-truth rules system, and a context-drift prevention mechanism for humans and AI agents.
@@ -25,7 +25,7 @@ If `pre_compact_task_progress.md` exists, read it first (before any other action
 
 - **Workspace-only operations:** never read/write/execute outside this repository.
   - **Allowed system reads:** `ps` and `pgrep` are permitted for process inspection (read-only).
-  - **Allowed external reads:** credential bootstrap scripts (e.g., `~/.openbao/start.sh`) are permitted when the project uses an external secret manager (see Section 12).
+  - **Allowed external reads:** credential bootstrap scripts in the user's home directory (e.g., `~/.openbao/start.sh`, `~/.config/op/`) are permitted when the project uses an external secret manager (see Section 2.2).
 - **Read before edit:** before changing any file, read the relevant code block(s) being modified; do not assume or infer contents.
 - **Rulebook edits require explicit request (HARD-LOCK):** never edit this rulebook without an explicit user request and authorization.
 - **Code changes only after approved plan (HARD-LOCK):**
@@ -109,30 +109,26 @@ Git commands are classified in three tiers. This replaces the blanket "forbidden
 2. Cite the specific PRECISION-MOD rule
 3. Suggest the correct alternative
 
-### 2.2 Credential Management (HARD-LOCK)
+### 2.2 Credential Management
 
-- **NEVER store secrets in files** — no passwords, tokens, API keys, or certificates in any markdown, `.env`, code, commit message, or documentation note.
-- **Credential backend: OpenBao** (recommended). OpenBao is an open-source secret manager (AES-256-GCM encryption, file-based storage, single binary, works offline). Alternative backends (HashiCorp Vault, 1Password CLI, AWS Secrets Manager) are supported — configure in `AI_Guidelines/codebase_rules.md`.
-- **Architecture:**
-  - `.openbao/data/` in the repo — encrypted at rest, **safe to commit**
-  - `~/.openbao/init-keys.json` in home directory — master key, **NEVER committed**
-  - Anyone who clones the repo gets the encrypted vault; the master key is shared securely out-of-band
-- **Bootstrap check:** at session start, verify OpenBao is running and unsealed:
-  ```bash
-  export BAO_ADDR=http://127.0.0.1:8200
-  bao status 2>/dev/null | head -3
-  ```
-  If sealed or not running, instruct the user to run `~/.openbao/start.sh`.
-- **Daily usage:**
-  ```bash
-  bao kv get -field=password <path>          # read
-  bao kv put <path> username=x password=y    # write
-  bao kv list <mount>/                       # list
-  ```
-- **In documentation:** reference credentials as `OpenBao <path>` (e.g., `OpenBao homelab/unifi`), never the actual value.
-- **Credential leak prevention:** agents SHOULD implement a `PreToolUse` hook that blocks commands containing credential patterns (e.g., `echo.*password`, `curl.*-d.*password`, `cat.*\.env`).
-- **Migration from plaintext:** use `scripts/migrate-credentials.sh` to scan the codebase for hardcoded credentials and migrate them to OpenBao. See `docs/credential-management.md` for the full guide.
-- **Setup:** run `scripts/setup-openbao.sh` to install and configure OpenBao for a new project.
+Applies only to projects that handle secrets (passwords, tokens, API keys, certificates). Projects that do not store credentials may skip this section.
+
+- **HARD-LOCK — No plaintext secrets in tracked files:** never store passwords, tokens, API keys, or certificates in any markdown, code, commit message, or documentation note that is tracked by git or shared with collaborators. `.env` files containing real secrets must be in `.gitignore`.
+- **Backend choice is OPTIONAL and project-specific.** Pick whatever fits the project's threat model and operational constraints. Document the choice (and the bootstrap/access commands) in `AI_Guidelines/codebase_rules.md`. Common options:
+
+  | Backend | When it fits |
+  |---|---|
+  | OpenBao (recommended reference) | Self-hosted, offline-capable, file-based vault; encrypted blob safe to commit. Setup script and migration tool included — see `docs/credential-management.md`. |
+  | HashiCorp Vault | Existing infra, multi-user policies. |
+  | 1Password CLI / Bitwarden CLI | Personal projects or small teams already using these tools. |
+  | AWS / GCP / Azure Secrets Manager | Cloud-native deployments. |
+  | System keychain (macOS Keychain, GNOME Keyring, libsecret) + env vars | Single-developer setups, no team sharing. |
+  | `.env` files in `.gitignore` (untracked) | Quick prototypes only, with team awareness of the risks. |
+
+- **In documentation:** reference credentials by their location, never the actual value. Examples: `OpenBao homelab/unifi`, `1Password "Eng/Prod DB"`, `aws-sm:project/api-key`, `keychain://my-service`.
+- **Credential leak prevention (RECOMMENDED):** agents MAY implement a `PreToolUse` hook that blocks commands containing credential patterns (e.g., `echo.*password`, `curl.*-d.*password`, `cat.*\.env`). Highly recommended when an agent is allowed to commit or push.
+- **Migration from plaintext:** if an existing codebase has hardcoded credentials, scan and migrate them. For OpenBao adopters, `scripts/migrate-credentials.sh` automates this — see `docs/credential-management.md`. For other backends, follow the equivalent flow.
+- **OpenBao setup (optional):** run `scripts/setup-openbao.sh` only if you have chosen OpenBao as the backend. The default install path does not require it.
 
 ## 3. Bugfix Policy
 - **Small bugfix:** minimal, safe change with no structural refactor.
@@ -326,6 +322,15 @@ When the repository is also used as an Obsidian vault:
 ---
 
 ## Changelog
+
+### v2.1.0 (2026-05-08)
+**Changes:**
+- **Section 2.2 (Credential Management):** clarified that the secret-manager backend is optional and project-specific. The hard-lock is "no plaintext secrets in tracked files"; the choice of backend (OpenBao, HashiCorp Vault, 1Password / Bitwarden CLI, cloud Secrets Managers, system keychain, or `.gitignore`d `.env`) is up to the project and documented in `codebase_rules.md`. OpenBao remains the recommended reference implementation but is no longer presented as the default requirement.
+- **Bootstrap and Quick Start:** OpenBao setup removed from the default install path. `scripts/setup-openbao.sh` is opt-in for projects that chose OpenBao.
+- **Documentation:** README and `AI_INSTALL.md` reframed accordingly. `docs/credential-management.md` is now the OpenBao-specific guide and points to alternatives.
+- **Section 2 (Golden Rules):** generalized the "external reads" exception so other home-directory bootstrap scripts (e.g., `~/.config/op/`) qualify alongside OpenBao's. Cross-reference fixed (Section 12 → Section 2.2).
+
+**Non-breaking:** projects already on OpenBao continue to work unchanged.
 
 ### v2.0.0 (2026-04-13)
 **Breaking changes:**

@@ -1,7 +1,7 @@
-# Precision-MOD v2.0.0 -- Installation and Integration Guide
+# Precision-MOD v2.1.0 -- Installation and Integration Guide
 
 **Audience:** humans and AI agents bootstrapping the framework in a new codebase.
-**Version:** 2.0.0
+**Version:** 2.1.0
 **Repository:** <https://github.com/D2duplo/precision-mod>
 
 ---
@@ -12,7 +12,7 @@ Precision-MOD (Precision-checked Engineering Change Rules, Intent, Safety, I/O, 
 
 - **Planning discipline** -- no code changes without an approved plan (except micro-changes under strict conditions).
 - **Git safety** -- three-tier command classification (allowed / authorized / forbidden) with optional hook enforcement.
-- **Credential management** -- secrets never stored in files; always referenced via a secret manager backend.
+- **Credential management** -- hard-lock against plaintext secrets in tracked files. Backend (OpenBao, HashiCorp Vault, 1Password / Bitwarden CLI, cloud Secrets Managers, system keychain) is optional and project-specific.
 - **Session persistence** -- structured session logs with identity detection, enabling cross-session and cross-agent context.
 - **Documentation discipline** -- mandatory updates to `filetree.md`, `planning_journal.md`, and commit messages in Conventional Commits format.
 - **Context window management** -- proactive compaction when usage exceeds 40%.
@@ -31,7 +31,7 @@ The rulebook is **codebase-agnostic**. It works with any language, framework, or
 **Optional:**
 
 - **Obsidian** -- for vault integration, MCP bridge, and template management.
-- **Secret manager** -- OpenBao, HashiCorp Vault, 1Password CLI, AWS Secrets Manager, or equivalent. Required only if the project handles credentials.
+- **Secret manager** -- only if the project handles credentials. Pick whichever fits: OpenBao (self-hosted, offline; reference scripts shipped with this repo), HashiCorp Vault, 1Password CLI / Bitwarden CLI, AWS / GCP / Azure Secrets Manager, or the system keychain. See Section 7.
 
 ---
 
@@ -349,47 +349,28 @@ Codex CLI reads `AGENTS.md` natively. No additional configuration file is requir
 
 ---
 
-## 7. Credential Management with OpenBao
+## 7. Optional: Credential Management
 
-Precision-MOD uses **OpenBao** as its default credential manager. OpenBao is an open-source fork of HashiCorp Vault (post-BSL license change), providing AES-256-GCM encryption with file-based storage — no database or cloud dependency required.
+This section applies only if the project handles secrets. If it does not, skip it.
 
-For the full guide, see `docs/credential-management.md`.
+The hard-lock is **no plaintext secrets in tracked files** (Section 2.2 of the rulebook). The backend you use to keep that promise is your choice and lives in `AI_Guidelines/codebase_rules.md`.
 
-### 7.1 Automated Setup
+### 7.1 Pick a Backend
 
-Run the setup script to install and configure OpenBao:
+| Backend | Best for | Repo footprint |
+|---|---|---|
+| **OpenBao** (reference shipped with Precision-MOD) | Self-hosted, offline, file-based vault; encrypted blob safe to commit | `.openbao/` directory in repo |
+| **HashiCorp Vault** | Existing infra, multi-user policies | None (server-side) |
+| **1Password CLI / Bitwarden CLI** | Personal projects, small teams already using these tools | None |
+| **AWS / GCP / Azure Secrets Manager** | Cloud-native deployments | None |
+| **System keychain** (macOS Keychain, GNOME Keyring, libsecret) | Single-developer setups, no team sharing | None |
+| **`.env` in `.gitignore`** | Quick prototypes only — accept the risks | None tracked |
 
-```bash
-bash AI_Guidelines/precision-mod-upstream/scripts/setup-openbao.sh
-```
+### 7.2 Document the Choice
 
-This will:
-- Install OpenBao (brew on macOS, package manager on Linux)
-- Create `.openbao/config.hcl` in the repo (file storage backend)
-- Create `~/.openbao/start.sh` (auto-unseal startup script)
-- Initialize the vault, save master key to `~/.openbao/init-keys.json`
-- Create a KV v2 secret engine
+In `AI_Guidelines/codebase_rules.md`, add a "Credential Management" section that names the backend, the bootstrap commands, and the paths/items in use. Reference values by location, never by value.
 
-### 7.2 Migrate Existing Plaintext Credentials
-
-If the codebase already has hardcoded credentials (`.env` files, AGENTS.md, code), run:
-
-```bash
-# Scan only (no changes)
-bash AI_Guidelines/precision-mod-upstream/scripts/migrate-credentials.sh --scan-only
-
-# Interactive migration
-bash AI_Guidelines/precision-mod-upstream/scripts/migrate-credentials.sh
-
-# Batch migration with mapping file
-bash AI_Guidelines/precision-mod-upstream/scripts/migrate-credentials.sh --batch migrate-map.txt
-```
-
-The script scans for credential patterns, helps store them in OpenBao, and replaces plaintext values with `OpenBao <path>` references.
-
-### 7.3 Configure for Your Project
-
-Add credential paths to `AI_Guidelines/codebase_rules.md`:
+OpenBao example:
 
 ```markdown
 ## Credential Management
@@ -403,14 +384,64 @@ Add credential paths to `AI_Guidelines/codebase_rules.md`:
 | `project/api` | External API | api_key, secret |
 ```
 
-### 7.4 Agent Instructions
-
-In `AGENTS.md`, add:
+1Password CLI example:
 
 ```markdown
-## Credentials — OpenBao (MANDATORY)
+## Credential Management
 
-NEVER store secrets in files. All credentials in OpenBao.
+**Backend:** 1Password CLI (`op`) — vault `Eng/Prod`
+**Bootstrap:** `op signin`
+
+| Item | Service | Fields |
+|---|---|---|
+| `Eng/Prod/Database` | MySQL | username, password, host |
+| `Eng/Prod/API` | External API | api_key, secret |
+```
+
+### 7.3 OpenBao — Turnkey Setup (only if you chose OpenBao)
+
+```bash
+bash AI_Guidelines/precision-mod-upstream/scripts/setup-openbao.sh
+```
+
+This will:
+- Install OpenBao (brew on macOS, package manager on Linux)
+- Create `.openbao/config.hcl` in the repo (file storage backend)
+- Create `~/.openbao/start.sh` (auto-unseal startup script)
+- Initialize the vault, save master key to `~/.openbao/init-keys.json`
+- Create a KV v2 secret engine
+
+For the full OpenBao guide (architecture, daily commands, team sharing, threat model), see `docs/credential-management.md`.
+
+### 7.4 Migrate Existing Plaintext Credentials
+
+If the codebase already has hardcoded credentials (`.env` files, AGENTS.md, code):
+
+**OpenBao users:**
+
+```bash
+# Scan only (no changes)
+bash AI_Guidelines/precision-mod-upstream/scripts/migrate-credentials.sh --scan-only
+
+# Interactive migration
+bash AI_Guidelines/precision-mod-upstream/scripts/migrate-credentials.sh
+
+# Batch migration with mapping file
+bash AI_Guidelines/precision-mod-upstream/scripts/migrate-credentials.sh --batch migrate-map.txt
+```
+
+**Other backends:** the same pattern applies — scan for credential patterns, store the values in your backend, replace plaintext values with location references (e.g., `1Password "Eng/Prod/DB"`, `aws-sm:project/api-key`). The OpenBao migration script can be adapted as a template.
+
+> After any migration, old plaintext values remain in git history. Use `git filter-repo` or `bfg` to scrub if the values were sensitive.
+
+### 7.5 Agent Instructions
+
+In `AGENTS.md`, add a short pointer that names the backend, the bootstrap command, and the read/write commands (and remind agents that secrets must never be written to files or echoed). Example for OpenBao:
+
+```markdown
+## Credentials — OpenBao
+
+NEVER store secrets in tracked files. All credentials in OpenBao.
 
 \`\`\`bash
 ~/.openbao/start.sh                          # start if not running
@@ -422,15 +453,7 @@ bao kv put <path> username=x password=y      # write
 Reference in docs as: `OpenBao <path>`
 ```
 
-### 7.5 Team Sharing
-
-The encrypted vault (`.openbao/data/`) is safe to commit — anyone who clones the repo gets the encrypted data. To access secrets, team members need the master key, shared securely out-of-band (1Password, Signal, in-person).
-
-### 7.6 Security Notes
-
-- **Protected:** data at rest (AES-256-GCM encryption in `.openbao/data/`)
-- **NOT protected:** data in memory while vault is unsealed; any process on the same machine can read secrets via the API while running
-- **Git history:** after migrating from plaintext, old values remain in git history. Use `git filter-repo` or `bfg` to clean if needed
+For 1Password CLI, AWS Secrets Manager, etc., write the equivalent block.
 
 ---
 
@@ -628,7 +651,7 @@ check() {
   fi
 }
 
-echo "Precision-MOD v2.0.0 -- Installation Verification"
+echo "Precision-MOD v2.1.0 -- Installation Verification"
 echo "---------------------------------------------------"
 
 check "Rulebook exists" "[ -f AI_Guidelines/PRECISION_MOD_RULEBOOK.md ]"
@@ -698,7 +721,7 @@ Review any custom git restrictions in your `codebase_rules.md` and reconcile wit
 
 ### 12.4 Add Credential Management
 
-If the project uses a secret manager, add the credential paths section to `AI_Guidelines/codebase_rules.md` (see Section 7 above). v2.0.0 introduces Section 2.2 (Credential Management) as a hard-lock constraint.
+If the project handles secrets, add a Credential Management section to `AI_Guidelines/codebase_rules.md` (see Section 7 above). The hard-lock — introduced in v2.0.0 and clarified in v2.1.0 — is "no plaintext secrets in tracked files". The choice of backend (OpenBao, HashiCorp Vault, 1Password / Bitwarden CLI, AWS / GCP / Azure Secrets Manager, system keychain) is optional and project-specific. If the project does not handle secrets, this subsection can be skipped entirely.
 
 ### 12.5 Update Session Log Format
 
@@ -721,12 +744,29 @@ v2.0.0 introduces the `PreToolUse` hook mechanism for deterministic enforcement 
 
 ### 12.7 Update AGENTS.md
 
-Replace the mandatory initialization text in `AGENTS.md` with the v2.0.0 version:
+Replace the mandatory initialization text in `AGENTS.md` with the current version:
 
 ```
 MANDATORY: At the start of every task, read `AI_Guidelines/PRECISION_MOD_RULEBOOK.md`, `filetree.md`, and `AI_SKILLS/INDEX.md`.
 If `pre_compact_task_progress.md` exists, read it first (before any other action), then read the rulebook, the active plan (if any), and `filetree.md`, delete `pre_compact_task_progress.md`, and continue.
 ```
+
+### 12.8 Updating from v2.0.0 to v2.1.0
+
+v2.1.0 is a non-breaking minor bump.
+
+- **Section 2.2 (Credential Management)** is now explicit that the secret-manager backend is optional. The hard-lock remains "no plaintext secrets in tracked files". Projects already running OpenBao need no changes — it stays the recommended reference implementation, only repositioned as one of several supported options.
+- **Bootstrap and Quick Start** no longer presume OpenBao. `scripts/setup-openbao.sh` is opt-in.
+- **`docs/credential-management.md`** is now the OpenBao-specific guide and points to alternative backends.
+
+To adopt v2.1.0:
+
+```bash
+cd AI_Guidelines/precision-mod-upstream && git pull && cd -
+cp AI_Guidelines/precision-mod-upstream/PRECISION_MOD_RULEBOOK.md AI_Guidelines/PRECISION_MOD_RULEBOOK.md
+```
+
+If you have not chosen a credential backend yet, document the choice (or document that the project handles no secrets) in `AI_Guidelines/codebase_rules.md`.
 
 ---
 
@@ -757,7 +797,7 @@ touch AGENTS.md filetree.md planning_journal.md AI_Guidelines/codebase_rules.md 
 
 # 6. Initial commit
 git add -A
-git commit -m "chore: bootstrap Precision-MOD v2.0.0"
+git commit -m "chore: bootstrap Precision-MOD v2.1.0"
 ```
 
 Then populate `AGENTS.md`, `AI_Guidelines/codebase_rules.md`, `AI_SKILLS/INDEX.md`, `filetree.md`, and `planning_journal.md` with the templates from Section 5.
