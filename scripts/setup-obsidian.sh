@@ -11,7 +11,22 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# Resolve REPO_ROOT: when this script is run from inside the precision-mod
+# clone (submodule or vendored), target the parent project, not the clone.
+__sd="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+__ud="$(dirname "$__sd")"
+REPO_ROOT="$(git -C "$__ud" rev-parse --show-superproject-working-tree 2>/dev/null || true)"
+if [ -z "$REPO_ROOT" ]; then
+  __parent="$(dirname "$__ud")"
+  __ptop="$(git -C "$__parent" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$__ptop" ] && [ "$__ptop" != "$__ud" ]; then
+    REPO_ROOT="$__ptop"
+  fi
+fi
+if [ -z "$REPO_ROOT" ]; then
+  REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+fi
+unset __sd __ud __parent __ptop
 MCP_PORT=22360
 MCP_NAME="obsidian-vault"
 

@@ -1,6 +1,6 @@
 # PRECISION-MOD Rulebook
 
-**Version:** 2.2.0
+**Version:** 2.2.1
 
 ## 1. Overview
 PRECISION-MOD (Precision-checked Engineering Change Rules, Intent, Safety, I/O, Operations, and Non-negotiable Modifications) is a hard-lock verification system, a tool-consolidation gateway, a single-source-of-truth rules system, and a context-drift prevention mechanism for humans and AI agents.
@@ -440,6 +440,19 @@ When both are used, `codebase_rules.md` documents how they map (e.g., `BUG-NNN` 
 ---
 
 ## Changelog
+
+### v2.2.1 (2026-05-08)
+
+**Patch — installer fixes.** No rulebook content changes; ships updated install scripts.
+
+- **`scripts/install.sh` REPO_ROOT detection (BUG FIX):** when precision-mod was used as a git submodule (Method B in AI_INSTALL.md) or a regular clone inside a parent project (Method A), the installer detected the submodule's own toplevel as the project root and bootstrapped `AI_Guidelines/`, `AI_tasks/`, `AGENTS.md`, etc. **inside** the precision-mod clone instead of in the parent project. Resolution order is now: `--root <path>` (explicit), superproject working tree (submodule case), parent-of-upstream's git toplevel (clone-inside-project case), `pwd` (last resort). A safety guard refuses to proceed if the resolved root is inside the upstream directory.
+- **`scripts/install.sh` skills auto-copy:** `skills/session-save.md` and `skills/session-load.md` are now copied automatically into `.ai/commands/` during bootstrap. The previous "next steps" instructed users to copy them manually.
+- **`scripts/install.sh` codebase_rules.md template:** the generated template now includes placeholder sections for the v2.2.0 per-project enumerations (production-flagged targets, sensitive data categories, privileged tooling wrappers, verification gates, cross-repo sync points, in-repo issue tracking).
+- **`scripts/install.sh` `--root <path>` flag:** explicit project root override, useful when auto-detection cannot determine the parent project.
+- **Same REPO_ROOT resolution applied to `setup-obsidian.sh`, `setup-openbao.sh`, `migrate-credentials.sh`** to prevent the same regression in adjacent flows.
+- **Stale version banners** in `install.sh` (was `v2.1.0`) and the strings it generates (`planning_journal.md`, `AGENTS.md` template) updated to current version.
+
+**Migration:** projects already on v2.2.0 do not need to re-run the installer. If a previous install bootstrapped artefacts inside `AI_Guidelines/precision-mod-upstream/`, move them to the project root manually and re-run from the parent project root with the v2.2.1 installer.
 
 ### v2.2.0 (2026-05-08)
 

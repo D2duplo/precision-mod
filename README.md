@@ -1,6 +1,6 @@
 # Precision-MOD
 
-**`v2.2.0`** | Apache-2.0 | [Rulebook](PRECISION_MOD_RULEBOOK.md) | [Installation Guide](AI_INSTALL.md)
+**`v2.2.1`** | Apache-2.0 | [Rulebook](PRECISION_MOD_RULEBOOK.md) | [Installation Guide](AI_INSTALL.md)
 
 ---
 

@@ -1,7 +1,7 @@
-# Precision-MOD v2.2.0 -- Installation and Integration Guide
+# Precision-MOD v2.2.1 -- Installation and Integration Guide
 
 **Audience:** humans and AI agents bootstrapping the framework in a new codebase.
-**Version:** 2.2.0
+**Version:** 2.2.1
 **Repository:** <https://github.com/D2duplo/precision-mod>
 
 ---
@@ -651,7 +651,7 @@ check() {
   fi
 }
 
-echo "Precision-MOD v2.2.0 -- Installation Verification"
+echo "Precision-MOD v2.2.1 -- Installation Verification"
 echo "---------------------------------------------------"
 
 check "Rulebook exists" "[ -f AI_Guidelines/PRECISION_MOD_RULEBOOK.md ]"
@@ -881,7 +881,7 @@ touch AGENTS.md filetree.md planning_journal.md AI_Guidelines/codebase_rules.md 
 
 # 6. Initial commit
 git add -A
-git commit -m "chore: bootstrap Precision-MOD v2.2.0"
+git commit -m "chore: bootstrap Precision-MOD v2.2.1"
 ```
 
 Then populate `AGENTS.md`, `AI_Guidelines/codebase_rules.md`, `AI_SKILLS/INDEX.md`, `filetree.md`, and `planning_journal.md` with the templates from Section 5.

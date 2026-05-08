@@ -1,39 +1,120 @@
 #!/usr/bin/env bash
-# Precision-MOD v2.1.0 — Installation Script
-# Usage: bash AI_Guidelines/precision-mod-upstream/scripts/install.sh [--with-obsidian] [--with-hooks]
+# Precision-MOD v2.2.1 — Installation Script
+# Usage: bash <upstream>/scripts/install.sh [--with-obsidian] [--with-hooks] [--root <path>]
 #
-# Bootstraps the Precision-MOD directory structure, creates required files,
-# and optionally configures Obsidian vault integration and git safety hooks.
+# Bootstraps the Precision-MOD directory structure in the PARENT project,
+# copies the rulebook and session skills, and optionally configures Obsidian
+# vault integration and git safety hooks.
+#
+# Project root is auto-detected. When precision-mod is used as a git submodule,
+# the script targets the superproject's working tree, NOT the submodule itself.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UPSTREAM_DIR="$(dirname "$SCRIPT_DIR")"
-REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$(pwd)")"
 
-# Parse arguments
+# Parse arguments first so --root takes effect before REPO_ROOT detection.
 WITH_OBSIDIAN=false
 WITH_HOOKS=false
-for arg in "$@"; do
-  case "$arg" in
-    --with-obsidian) WITH_OBSIDIAN=true ;;
-    --with-hooks)    WITH_HOOKS=true ;;
+EXPLICIT_ROOT=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --with-obsidian) WITH_OBSIDIAN=true; shift ;;
+    --with-hooks)    WITH_HOOKS=true; shift ;;
+    --root)
+      if [ $# -lt 2 ]; then
+        echo "ERROR: --root requires a path argument" >&2
+        exit 2
+      fi
+      EXPLICIT_ROOT="$2"; shift 2 ;;
     --help|-h)
-      echo "Usage: $0 [--with-obsidian] [--with-hooks]"
-      echo ""
-      echo "  --with-obsidian  Configure repo as Obsidian vault (.obsidian/ in .gitignore)"
-      echo "  --with-hooks     Install git-safe PreToolUse hook for Claude Code"
+      cat <<USAGE
+Usage: $0 [--with-obsidian] [--with-hooks] [--root <path>]
+
+  --with-obsidian  Configure repo as Obsidian vault (.obsidian/ in .gitignore)
+  --with-hooks     Install git-safe PreToolUse hook for Claude Code
+  --root <path>    Explicit project root (override auto-detection)
+USAGE
       exit 0
+      ;;
+    *)
+      echo "ERROR: unknown argument: $1" >&2
+      exit 2
       ;;
   esac
 done
 
-echo "=== Precision-MOD v2.1.0 — Bootstrap ==="
-echo "Repo root: $REPO_ROOT"
+# ---------------------------------------------------------------------------
+# Resolve REPO_ROOT (the PARENT project root, never the precision-mod clone).
+#
+# Resolution order:
+#   1. --root <path> (explicit override)
+#   2. Superproject working tree — when precision-mod is a git submodule
+#   3. Toplevel of the directory containing UPSTREAM_DIR — when precision-mod
+#      is a regular clone whose parent dir is itself a git repo
+#   4. Current working directory (last resort)
+#
+# Then: refuse to proceed if REPO_ROOT == UPSTREAM_DIR or sits inside it.
+# Bootstrapping inside the precision-mod clone is never correct (this is the
+# bug v2.2.1 fixes).
+# ---------------------------------------------------------------------------
+
+REPO_ROOT=""
+
+if [ -n "$EXPLICIT_ROOT" ]; then
+  REPO_ROOT="$(cd "$EXPLICIT_ROOT" 2>/dev/null && pwd || true)"
+  if [ -z "$REPO_ROOT" ]; then
+    echo "ERROR: --root path does not exist or is not accessible: $EXPLICIT_ROOT" >&2
+    exit 1
+  fi
+else
+  # Submodule case: ask the upstream's git for the superproject.
+  SUPERPROJECT="$(git -C "$UPSTREAM_DIR" rev-parse --show-superproject-working-tree 2>/dev/null || true)"
+  if [ -n "$SUPERPROJECT" ]; then
+    REPO_ROOT="$SUPERPROJECT"
+  else
+    # Non-submodule clone case: the parent of UPSTREAM_DIR may itself be a
+    # git repo (the user's project). Its toplevel is the parent project root.
+    PARENT="$(dirname "$UPSTREAM_DIR")"
+    PARENT_TOP="$(git -C "$PARENT" rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ -n "$PARENT_TOP" ] && [ "$PARENT_TOP" != "$UPSTREAM_DIR" ]; then
+      REPO_ROOT="$PARENT_TOP"
+    fi
+  fi
+
+  # Last resort.
+  if [ -z "$REPO_ROOT" ]; then
+    REPO_ROOT="$(pwd)"
+  fi
+fi
+
+# Safety guard: REPO_ROOT must not equal or be inside UPSTREAM_DIR.
+case "$REPO_ROOT/" in
+  "$UPSTREAM_DIR/"|"$UPSTREAM_DIR"/*)
+    cat >&2 <<ERR
+ERROR: detected REPO_ROOT inside the precision-mod upstream directory.
+       REPO_ROOT     = $REPO_ROOT
+       UPSTREAM_DIR  = $UPSTREAM_DIR
+
+This would bootstrap precision-mod's directory structure INSIDE the clone
+itself, which is never correct. Re-run from the parent project root, or
+pass --root <path> explicitly:
+
+  bash $UPSTREAM_DIR/scripts/install.sh --root /path/to/your/project
+ERR
+    exit 1
+    ;;
+esac
+
+echo "=== Precision-MOD v2.2.1 — Bootstrap ==="
+echo "Repo root:    $REPO_ROOT"
+echo "Upstream dir: $UPSTREAM_DIR"
 echo ""
 
 # 1. Create directory structure
-echo "[1/7] Creating directory structure..."
+echo "[1/8] Creating directory structure..."
 mkdir -p "$REPO_ROOT/AI_Guidelines/hooks"
 mkdir -p "$REPO_ROOT/AI_SKILLS"
 mkdir -p "$REPO_ROOT/AI_tasks/planned"
@@ -44,13 +125,12 @@ mkdir -p "$REPO_ROOT/.ai/commands"
 mkdir -p "$REPO_ROOT/_templates"
 mkdir -p "$REPO_ROOT/99_Inbox/session-logs"
 
-# .gitkeep for empty dirs
 for dir in AI_tasks/planned AI_tasks/queued AI_tasks/in_progress AI_tasks/_completed 99_Inbox/session-logs; do
   touch "$REPO_ROOT/$dir/.gitkeep"
 done
 
 # 2. Copy rulebook (if not already present)
-echo "[2/7] Installing rulebook..."
+echo "[2/8] Installing rulebook..."
 if [ ! -f "$REPO_ROOT/AI_Guidelines/PRECISION_MOD_RULEBOOK.md" ]; then
   cp "$UPSTREAM_DIR/PRECISION_MOD_RULEBOOK.md" "$REPO_ROOT/AI_Guidelines/PRECISION_MOD_RULEBOOK.md"
   echo "  Copied rulebook to AI_Guidelines/"
@@ -59,7 +139,7 @@ else
 fi
 
 # 3. Create codebase_rules.md template (if not exists)
-echo "[3/7] Creating codebase_rules.md template..."
+echo "[3/8] Creating codebase_rules.md template..."
 if [ ! -f "$REPO_ROOT/AI_Guidelines/codebase_rules.md" ]; then
   cat > "$REPO_ROOT/AI_Guidelines/codebase_rules.md" << 'CODEBASERULES'
 # Codebase Rules
@@ -105,14 +185,57 @@ op item get "Eng/Prod/DB" --fields password
 
 ## 6. Project-Specific Constraints
 <!-- Any project-specific hard rules -->
+
+## 7. Production-Flagged Targets (Section 2.3 of rulebook)
+<!-- List environments, scripts, services, and credentials that count as
+     production. The agent must not act on these without explicit, scoped
+     authorization. -->
+
+## 8. Sensitive Data (Section 2.4 of rulebook)
+<!-- Categories that must be anonymized in tracked artefacts, with the
+     placeholder scheme used for each (e.g., [PERSON], [ACCOUNT], masked
+     digits, location pointers). -->
+
+## 9. Privileged Tooling Wrappers (Section 7 of rulebook)
+<!-- Wrappers the agent must use instead of the underlying CLI for
+     privileged operations (database access, deploys, secret retrieval,
+     container exec, etc.). -->
+
+## 10. Verification Gates (Section 9 of rulebook)
+<!-- Default verification gates by task type. For investigative tasks,
+     define exit-criterion templates instead. -->
+
+## 11. Cross-Repository Sync Points (Section 14 of rulebook)
+<!-- Local files / configs whose change requires updating a sibling
+     repository, and which sibling. -->
+
+## 12. Issue Tracking — In-Repo Folders (Section 15 of rulebook, optional)
+<!-- If using BUGS/ and FEATURES/ folders: ID format, required files,
+     lifecycle state names, severity scale. Skip if relying solely on
+     external trackers. -->
 CODEBASERULES
   echo "  Created template — edit to match your project"
 else
   echo "  codebase_rules.md already exists — skipping"
 fi
 
-# 4. Create AI_SKILLS/INDEX.md (if not exists)
-echo "[4/7] Creating AI_SKILLS/INDEX.md..."
+# 4. Copy session skills (new in v2.2.1 — was a manual step before)
+echo "[4/8] Installing session skills..."
+for skill in session-save session-load; do
+  src="$UPSTREAM_DIR/skills/${skill}.md"
+  dst="$REPO_ROOT/.ai/commands/${skill}.md"
+  if [ -f "$dst" ]; then
+    echo "  $skill.md already exists — skipping"
+  elif [ -f "$src" ]; then
+    cp "$src" "$dst"
+    echo "  Copied $skill.md to .ai/commands/"
+  else
+    echo "  WARNING: $src not found in upstream — skipping"
+  fi
+done
+
+# 5. Create AI_SKILLS/INDEX.md (if not exists)
+echo "[5/8] Creating AI_SKILLS/INDEX.md..."
 if [ ! -f "$REPO_ROOT/AI_SKILLS/INDEX.md" ]; then
   cat > "$REPO_ROOT/AI_SKILLS/INDEX.md" << 'SKILLSINDEX'
 # AI Skills Index
@@ -146,8 +269,8 @@ else
   echo "  INDEX.md already exists — skipping"
 fi
 
-# 5. Create stub files
-echo "[5/7] Creating stub files..."
+# 6. Create stub files
+echo "[6/8] Creating stub files..."
 
 if [ ! -f "$REPO_ROOT/filetree.md" ]; then
   echo "# Filetree" > "$REPO_ROOT/filetree.md"
@@ -160,12 +283,11 @@ if [ ! -f "$REPO_ROOT/planning_journal.md" ]; then
   echo "# Planning Journal" > "$REPO_ROOT/planning_journal.md"
   echo "" >> "$REPO_ROOT/planning_journal.md"
   echo "## $(date +%Y-%m-%d)" >> "$REPO_ROOT/planning_journal.md"
-  echo "- **Summary:** Precision-MOD v2.1.0 bootstrapped" >> "$REPO_ROOT/planning_journal.md"
+  echo "- **Summary:** Precision-MOD v2.2.1 bootstrapped" >> "$REPO_ROOT/planning_journal.md"
   echo "- **Next:** Configure codebase_rules.md for this project" >> "$REPO_ROOT/planning_journal.md"
   echo "  Created planning_journal.md"
 fi
 
-# Create AGENTS.md if not exists
 if [ ! -f "$REPO_ROOT/AGENTS.md" ]; then
   cat > "$REPO_ROOT/AGENTS.md" << 'AGENTSMD'
 # Project Name
@@ -178,7 +300,7 @@ If `pre_compact_task_progress.md` exists, read it first (before any other action
 
 ## Precision-MOD
 
-Rulebook at `AI_Guidelines/PRECISION_MOD_RULEBOOK.md` (v2.1.0). Project rules at `AI_Guidelines/codebase_rules.md`.
+Rulebook at `AI_Guidelines/PRECISION_MOD_RULEBOOK.md` (v2.2.1). Project rules at `AI_Guidelines/codebase_rules.md`.
 
 ## Session Persistence
 
@@ -202,7 +324,6 @@ else
   echo "  AGENTS.md already exists — skipping"
 fi
 
-# Create CLAUDE.md pointer if not exists
 if [ ! -f "$REPO_ROOT/CLAUDE.md" ]; then
   cat > "$REPO_ROOT/CLAUDE.md" << 'CLAUDEMD'
 # Claude Code — see AGENTS.md
@@ -212,8 +333,8 @@ CLAUDEMD
   echo "  Created CLAUDE.md pointer"
 fi
 
-# 6. Update .gitignore
-echo "[6/7] Updating .gitignore..."
+# 7. Update .gitignore
+echo "[7/8] Updating .gitignore..."
 GITIGNORE="$REPO_ROOT/.gitignore"
 touch "$GITIGNORE"
 
@@ -231,10 +352,9 @@ if [ "$WITH_OBSIDIAN" = true ]; then
   echo "  Obsidian vault mode enabled"
 fi
 
-# 7. Optional: Install hooks
-echo "[7/7] Hooks..."
+# 8. Optional: Install hooks
+echo "[8/8] Hooks..."
 if [ "$WITH_HOOKS" = true ]; then
-  # Copy git-safe hook
   if [ -f "$UPSTREAM_DIR/scripts/git-safe.sh" ]; then
     cp "$UPSTREAM_DIR/scripts/git-safe.sh" "$REPO_ROOT/AI_Guidelines/hooks/git-safe.sh"
     chmod +x "$REPO_ROOT/AI_Guidelines/hooks/git-safe.sh"
@@ -255,11 +375,10 @@ echo ""
 echo "Next steps:"
 echo "  1. Edit AI_Guidelines/codebase_rules.md for your project"
 echo "  2. Edit AGENTS.md with your project details"
-echo "  3. Copy session-save.md and session-load.md from upstream to .ai/commands/"
-echo "  4. Run: git add AI_Guidelines/ AI_SKILLS/ AI_tasks/ .ai/ AGENTS.md CLAUDE.md filetree.md planning_journal.md"
+echo "  3. Run: git add AI_Guidelines/ AI_SKILLS/ AI_tasks/ .ai/ AGENTS.md CLAUDE.md filetree.md planning_journal.md"
 if [ "$WITH_OBSIDIAN" = true ]; then
-  echo "  5. Open this directory as an Obsidian vault"
-  echo "  6. Install claude-code-mcp plugin in Obsidian"
+  echo "  4. Open this directory as an Obsidian vault"
+  echo "  5. Install claude-code-mcp plugin in Obsidian"
 fi
 echo ""
 echo "Done."
