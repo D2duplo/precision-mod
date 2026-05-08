@@ -1,6 +1,6 @@
 # PRECISION-MOD Rulebook
 
-**Version:** 2.1.0
+**Version:** 2.2.0
 
 ## 1. Overview
 PRECISION-MOD (Precision-checked Engineering Change Rules, Intent, Safety, I/O, Operations, and Non-negotiable Modifications) is a hard-lock verification system, a tool-consolidation gateway, a single-source-of-truth rules system, and a context-drift prevention mechanism for humans and AI agents.
@@ -130,6 +130,30 @@ Applies only to projects that handle secrets (passwords, tokens, API keys, certi
 - **Migration from plaintext:** if an existing codebase has hardcoded credentials, scan and migrate them. For OpenBao adopters, `scripts/migrate-credentials.sh` automates this — see `docs/credential-management.md`. For other backends, follow the equivalent flow.
 - **OpenBao setup (optional):** run `scripts/setup-openbao.sh` only if you have chosen OpenBao as the backend. The default install path does not require it.
 
+### 2.3 Production Boundary
+
+- **HARD-LOCK — Explicit, scoped authorization for production:** the agent MUST NOT apply, deploy, or trigger any change against a production-flagged target (production database, production deploy pipeline, published release, irreversible write against shared infrastructure, outbound message to real users) without an explicit, direct authorization that names the action and the target.
+- **Authorization is per-action and per-target.** A "yes" granted for one production action does not extend to adjacent actions, even when they appear in the same workflow. The agent MUST NOT infer production approval from:
+  - a non-specific affirmative (e.g., "sim", "ok", "go ahead") given in response to a multi-part prompt
+  - approval of a planning step (which authorizes planning, not execution)
+  - approval of a non-production action of the same shape (e.g., dev-environment success does not authorize prod)
+- **No bundling (HARD-LOCK):** the agent MUST NOT bundle a production-flagged action with non-production actions in a single confirmation prompt. Production actions MUST be confirmed in isolation, so a single "yes" cannot be misinterpreted as authorizing the prod component of a multi-part request.
+- **Define "production-flagged" in `codebase_rules.md`.** Each project enumerates which environments, scripts, services, and credentials are production-flagged. The rulebook does not prescribe a list.
+- **Reversibility test:** when in doubt about whether an action is production-bound, ask whether it is reversible within the project's own controls (revert commit, drop table, kill process). If reversibility depends on a backup, an external party, or has a non-zero blast radius beyond the workspace, treat as production-flagged and require authorization.
+- **Override protocol:** if the agent receives a production-flagged request without explicit, scoped authorization, the agent MUST:
+  1. Pause execution
+  2. Restate the action and target in a single sentence
+  3. Request explicit authorization for that specific action and target
+  4. Proceed only after the user confirms in plain terms (not a one-word reply to a multi-part prompt)
+
+### 2.4 Sensitive Data Handling
+
+- **HARD-LOCK — No sensitive data in tracked artefacts:** sensitive data MUST NOT appear in any artefact tracked by git or shared with collaborators (plans, commits, commit messages, documentation, session logs, test fixtures committed to the repo, screenshots committed to the repo, error reports pasted into bug reports). Reference sensitive data by location, never by value.
+- **What counts as sensitive is project-specific.** Define the categories in `AI_Guidelines/codebase_rules.md`. Common categories include personal identifiers, financial identifiers, internal operational data, and credentials (credentials are also covered by Section 2.2).
+- **Anonymization in tracked artefacts:** when sensitive data must be referenced for context (e.g., reproducing a bug), the agent MUST replace the value with a placeholder defined in `codebase_rules.md`. Examples of placeholder schemes a project might adopt: `[PERSON]`, `[ID]`, `[ACCOUNT]`, masked digits (`1234*****`), or location pointers (`record #N in table T`).
+- **Logs and untracked artefacts** may contain sensitive data by necessity. They MUST be in `.gitignore` and MUST NOT be copied into tracked artefacts without anonymization.
+- **Cross-reference:** Section 2.2 governs credentials specifically. This subsection governs all other sensitive data.
+
 ## 3. Bugfix Policy
 - **Small bugfix:** minimal, safe change with no structural refactor.
 - **Large change:** choose Option A or Option B.
@@ -211,6 +235,8 @@ Applies only to projects that handle secrets (passwords, tokens, API keys, certi
 - Comment complex logic blocks.
 - Document code following best practices (clear docstrings, module comments, and rationale for non-obvious behavior).
 - Language/framework-specific conventions belong in `AI_Guidelines/codebase_rules.md`, not here.
+- **Mandatory tooling wrappers (HARD-LOCK):** when the project provides a wrapper script or command for a privileged or risky operation (database access, deployment, secret retrieval, log inspection, container exec, infrastructure changes), the agent MUST invoke the wrapper instead of the underlying CLI directly. Wrappers and their scopes are documented in `AI_Guidelines/codebase_rules.md`. The rulebook does not prescribe specific wrappers; it enforces the principle that, where one exists, it is the only sanctioned entry point.
+- **Wrapper escape valve:** if the wrapper does not support the required operation, is broken, or is itself the artefact under modification, the agent MUST notify the user, state the gap, and request explicit authorization before invoking the underlying CLI as a fallback. Falling through silently is forbidden.
 
 ## 8. MCP Usage
 - **chrome-devtools** MCP is recommended for smoke tests when available. Configure in `AI_Guidelines/codebase_rules.md` per project.
@@ -223,6 +249,12 @@ Applies only to projects that handle secrets (passwords, tokens, API keys, certi
 - **Exactly ONE task in_progress** at any time (not zero, not more than one), located in `AI_tasks/in_progress/`.
 - **If blocked or errors occur** — keep the current task as in_progress and create a new task describing what needs resolution.
 - Never mark a task as completed if tests are failing, implementation is partial, or unresolved errors exist.
+- **Verification gate (HARD-LOCK):** every task MUST declare its verification gate before being marked completed. The gate is the concrete, reproducible check that proves the work is done.
+  - **State-changing tasks** (code changes, infrastructure changes, deployments, data migrations) declare a concrete gate: test suite name, lint command, manual smoke step, peer review, deployment health check, or equivalent.
+  - **Investigative or read-only tasks** (root-cause analysis, code reading, hypothesis checking) declare an *exit criterion* instead: the question answered, the hypothesis confirmed or refuted, the artefact produced (note, finding, recommendation).
+  - **Plan-driven tasks:** the gate IS the plan's `## Verification` section (Section 4). No separate declaration needed.
+  - **Ad-hoc tasks:** defaults are declared in `codebase_rules.md`. If no default exists for the task type, the agent MUST propose a gate before starting work.
+  - Marking a task completed without running the declared gate (or recording the exit-criterion outcome) is forbidden, even if the agent is confident the work is correct.
 - **At task completion:** propose a descriptive commit message summarizing the changes made.
 
 ## 10. Context Window Management (HARD-LOCK)
@@ -319,9 +351,122 @@ When the repository is also used as an Obsidian vault:
 - **MCP integration:** if the Obsidian `claude-code-mcp` plugin is active, session persistence skills use it for file operations. If unavailable, skills fall back to direct filesystem writes.
 - **One vault, one repo:** avoid maintaining separate Obsidian vaults outside the repository. This prevents information drift between code and documentation.
 
+## 14. Cross-Repository Impact
+
+When a change in this repository can affect a sibling repository (deployment scripts, shared libraries, infrastructure configuration, dependent services, generated clients, schema consumers), the agent MUST notify the user before completing the task.
+
+### 14.1 Notification Format
+
+```
+⚠️ CROSS-REPO IMPACT: <component changed>
+Sibling repository: <repo name or path>
+Reason: <why this affects the sibling>
+Action required: <what the user should verify or update in the sibling>
+```
+
+This is a chat-time signal to the user before marking the task completed (Section 9). It is not required to appear in commit messages or tracked artefacts; it is a conversational guard-rail, not a metadata marker.
+
+### 14.2 Detecting Cross-Repo Impact
+
+- Each project documents its sibling repositories and their synchronization points in `AI_Guidelines/codebase_rules.md` (file paths, configuration variables, schema files, API contracts).
+- The agent MUST consult this list before completing any task that touches a documented synchronization point.
+- If no such list exists and the project clearly has cross-repo dependencies (multiple local clones owned by the user, generated clients, shared schema files), the agent SHOULD propose creating one.
+
+### 14.3 Scope
+
+This section covers impact on repositories the user controls or collaborates on. It does not require notification for general dependency updates (e.g., bumping a public package version), which are governed by the project's own update policy.
+
+## 15. Issue Tracking — In-Repository Folders (Optional Convention)
+
+When a project chooses to track bugs and feature requests as folders in the repository (rather than relying solely on external trackers like Jira, Linear, or GitHub Issues), the following conventions apply. This is a project-level decision documented in `codebase_rules.md`. The rulebook neither requires nor forbids the practice, but standardizes it where adopted.
+
+**Rationale:** in-repo issue folders make the issue's full history (original report, root-cause analysis, evidence, fix artefacts) part of the codebase. They survive tracker migrations, work offline, are searchable with code-grep tools, and link naturally to commits via Conventional Commits scope.
+
+### 15.1 Folder Layout
+
+- **Bugs:** `BUGS/<bug-id>_<slug>/`
+- **Features:** `FEATURES/<feat-id>_<slug>/` (case and exact directory name are project choice — `FEATURES/`, `Features/`, `features/`)
+- The top-level folder names, the ID format, and the slug rules are defined in `codebase_rules.md`. The rulebook only requires that each issue have its own folder.
+
+### 15.2 Required Internal Structure
+
+Each issue folder MUST contain:
+
+- **A report file** describing the original problem (for bugs) or request (for features). Filename is project choice (`report.md`, `bug_report.md`, `request.md`, …) but documented in `codebase_rules.md`.
+- **A verification subfolder** (`verification/`, `tests/`, or equivalent) holding evidence that the issue was reproduced (for bugs) or accepted (for features), and later resolved. An empty `.gitkeep` is acceptable until populated.
+
+Each issue folder MAY contain (depending on project type):
+
+- **An analysis file** documenting root-cause investigation (for bugs) or design (for features) — often the most-read artefact during incident review.
+- **An artifacts subfolder** holding implementation outputs (patches, migrations, scripts, generated files) tied specifically to this issue.
+- **Communication artefacts** (email drafts, stakeholder summaries) when the issue requires external coordination.
+
+The exact set of required and optional files is enumerated in `codebase_rules.md`.
+
+### 15.3 Sensitive Data in Reports (HARD-LOCK)
+
+Report files, analysis files, and any artefact under an issue folder are tracked artefacts. They MUST follow Section 2.4 anonymization rules. Reproduce by reference (`record #N in table T`, `[ACCOUNT]`, masked digits), never by value. The convenience of having full context next to the fix does NOT override the sensitive-data hard-lock.
+
+### 15.4 Lifecycle
+
+The issue folder is created at intake and persists for the life of the repository. Closure is recorded **inside** the folder (via a status field in the report file or a final summary section), not by deleting or moving the folder. This preserves the audit trail.
+
+Lifecycle state names (e.g., `open`, `investigating`, `in_progress`, `resolved`, `wont_fix`, `abandoned`) are project-defined in `codebase_rules.md`. The rulebook only requires that the chosen names be documented and used consistently.
+
+### 15.5 Linking to Commits and Plans
+
+- **Conventional Commits scope:** when committing changes that resolve an issue, the commit scope SHOULD reference the issue ID (e.g., `fix(BUG-042): …`, `feat(FEAT-007): …`). Multiple IDs are comma-separated when one commit resolves several issues.
+- **AI_tasks plans:** when an issue requires a formal plan (per Section 4), the plan in `AI_tasks/planned/` references the issue folder path, and the issue folder's report file references the plan path. The two cross-reference; they never duplicate content.
+
+### 15.6 Cross-Repository Issues
+
+When an issue spans multiple repositories (e.g., a backend bug whose fix also requires regenerating a client in a sibling repo):
+
+- The issue folder lives in **the repository where the technical fix is implemented** — typically the repository owning the root cause.
+- Sibling repositories reference the canonical folder by path (relative or full URL) in their own commit messages and any local follow-up tasks.
+- Do NOT duplicate the issue folder across repositories. Duplicates drift; references stay correct.
+- Cross-repo impact for the fix itself is governed by Section 14.
+
+### 15.7 Relationship to External Trackers
+
+In-repo issue folders are **complementary** to external trackers, not a replacement. A project may:
+
+- Use folders only (no external tracker)
+- Use external tracker only (no folders) — in which case this section does not apply
+- Use both, with the folder as the technical source of truth (reproductions, analyses, fix artefacts) and the tracker as the management and stakeholder-visibility layer (priority, sprint, assignee)
+
+When both are used, `codebase_rules.md` documents how they map (e.g., `BUG-NNN` folder ↔ `PROJ-NNN` ticket) and which side is authoritative for each field.
+
 ---
 
 ## Changelog
+
+### v2.2.0 (2026-05-08)
+
+**Non-breaking minor bump.** Six new universal hard-locks and conventions distilled from production use across multiple projects. All defer specifics to `codebase_rules.md`, preserving the codebase-agnostic philosophy of the rulebook.
+
+**New sections:**
+- **Section 2.3 — Production Boundary:** hard-lock requiring explicit, scoped authorization for any production-flagged action. Forbids inferring prod approval from non-specific affirmatives or multi-part prompts. Adds the contrapositive "no bundling" rule: the agent MUST NOT mix production and non-production actions in a single confirmation prompt.
+- **Section 2.4 — Sensitive Data Handling:** hard-lock against sensitive data in tracked artefacts. Categories and placeholder schemes are defined per-project in `codebase_rules.md`. Cross-references Section 2.2 for credentials.
+- **Section 14 — Cross-Repository Impact:** standard notification format (`⚠️ CROSS-REPO IMPACT: …`) when changes affect sibling repositories. Sync points documented per-project in `codebase_rules.md`. Explicitly a chat-time signal, not a commit-message marker.
+- **Section 15 — Issue Tracking (In-Repository Folders):** optional convention for tracking bugs and features as folders in the repo, complementary to external trackers. Standardizes the folder/report/verification structure, the cross-reference to commits and plans, the anonymization rules (cross-references §2.4), and the policy for cross-repo issues. Numbering, severity, templates, and lifecycle state names remain project-defined.
+
+**Extensions:**
+- **Section 7 (Implementation Guidelines):** added mandatory tooling wrapper hard-lock — when a project provides a wrapper for a privileged operation, the agent must use it instead of the underlying CLI. Includes an explicit escape valve: when the wrapper does not support the operation, is broken, or is the artefact under modification, the agent must notify and request authorization before falling through.
+- **Section 9 (To-do Rules):** added explicit verification gate hard-lock. Distinguishes state-changing tasks (concrete gate: test, lint, smoke, review, deploy health check) from investigative or read-only tasks (exit criterion: question answered, hypothesis confirmed/refuted). For plan-driven tasks the gate is the plan's `## Verification` section; for ad-hoc tasks defaults live in `codebase_rules.md`.
+
+**Non-breaking:** existing projects gain new hard-locks but no rule that was previously valid becomes invalid. Each new rule has an escape valve in `codebase_rules.md` for project-specific definitions. Section 15 is explicitly opt-in.
+
+**Migration:** projects upgrading from v2.1.0 should:
+1. Pull the new rulebook
+2. Add the per-project enumerations to `AI_Guidelines/codebase_rules.md`:
+   - Production-flagged targets (Section 2.3)
+   - Sensitive data categories and placeholders (Section 2.4)
+   - Privileged tooling wrappers (Section 7)
+   - Default verification gates and exit-criterion templates (Section 9)
+   - Sibling repositories and cross-repo sync points (Section 14)
+   - Issue folder conventions if adopting Section 15 (ID format, required files, lifecycle state names, severity)
+3. The rulebook itself works without these additions; the additions tighten enforcement project by project.
 
 ### v2.1.0 (2026-05-08)
 **Changes:**

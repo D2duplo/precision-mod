@@ -1,6 +1,6 @@
 # Precision-MOD
 
-**`v2.1.0`** | Apache-2.0 | [Rulebook](PRECISION_MOD_RULEBOOK.md) | [Installation Guide](AI_INSTALL.md)
+**`v2.2.0`** | Apache-2.0 | [Rulebook](PRECISION_MOD_RULEBOOK.md) | [Installation Guide](AI_INSTALL.md)
 
 ---
 
@@ -22,6 +22,19 @@ Precision-MOD provides a single source of truth for engineering constraints that
 | **Credential management** | Hard-lock: no plaintext secrets in tracked files. Backend (OpenBao, HashiCorp Vault, 1Password / Bitwarden CLI, AWS / GCP / Azure Secrets Manager, system keychain) is optional and project-specific. OpenBao reference scripts included for projects that want it. |
 | **Session persistence** | Multi-host, multi-agent session logs with identity tracking (host, user, agent_type, model) |
 | **Documentation standards** | Conventional Commits, planning journal, filetree index |
+
+## What changed in v2.2.0
+
+| Area | v2.1.0 | v2.2.0 |
+|---|---|---|
+| Production safety | Implicit (covered by general "deletes require permission" only) | **§2.3 Production Boundary** — explicit, scoped authorization per prod action and target; no inferring approval from a "yes" to a multi-part prompt; agent must not bundle prod with non-prod in one confirmation |
+| Sensitive data | Only credentials covered (§2.2) | **§2.4 Sensitive Data Handling** — hard-lock against PII / financial IDs / internal data in tracked artefacts; categories and placeholders in `codebase_rules.md` |
+| Privileged tooling | Not addressed | **§7 wrapper hard-lock** — where a project ships a wrapper for a privileged op, the agent must use it; explicit escape valve when the wrapper is missing a feature, broken, or the artefact under modification |
+| Task completion | Negative rule only ("don't complete with failing tests") | **§9 verification gate** — every task declares its gate (concrete check for state-changing tasks, exit criterion for investigative tasks) before being marked complete |
+| Cross-repo impact | Not addressed | **§14 Cross-Repository Impact** — standard `⚠️ CROSS-REPO IMPACT: …` chat-time notification when a change affects a sibling repo |
+| Issue tracking | Not addressed | **§15 In-Repo Issue Tracking** (opt-in) — `BUGS/` and `FEATURES/` folder convention with report + verification + cross-link to commits and plans; complements external trackers |
+
+Non-breaking: existing projects upgrade by pulling the rulebook and adding per-project enumerations to `codebase_rules.md`. §15 is explicitly opt-in.
 
 ## What changed in v2.1.0
 

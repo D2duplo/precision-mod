@@ -1,7 +1,7 @@
-# Precision-MOD v2.1.0 -- Installation and Integration Guide
+# Precision-MOD v2.2.0 -- Installation and Integration Guide
 
 **Audience:** humans and AI agents bootstrapping the framework in a new codebase.
-**Version:** 2.1.0
+**Version:** 2.2.0
 **Repository:** <https://github.com/D2duplo/precision-mod>
 
 ---
@@ -651,7 +651,7 @@ check() {
   fi
 }
 
-echo "Precision-MOD v2.1.0 -- Installation Verification"
+echo "Precision-MOD v2.2.0 -- Installation Verification"
 echo "---------------------------------------------------"
 
 check "Rulebook exists" "[ -f AI_Guidelines/PRECISION_MOD_RULEBOOK.md ]"
@@ -768,6 +768,90 @@ cp AI_Guidelines/precision-mod-upstream/PRECISION_MOD_RULEBOOK.md AI_Guidelines/
 
 If you have not chosen a credential backend yet, document the choice (or document that the project handles no secrets) in `AI_Guidelines/codebase_rules.md`.
 
+### 12.9 Updating from v2.1.0 to v2.2.0
+
+v2.2.0 is a non-breaking minor bump. It introduces six new universal hard-locks and conventions, all of which defer concrete enumeration to `codebase_rules.md`.
+
+**Pull the rulebook:**
+
+```bash
+cd AI_Guidelines/precision-mod-upstream && git pull && cd -
+cp AI_Guidelines/precision-mod-upstream/PRECISION_MOD_RULEBOOK.md AI_Guidelines/PRECISION_MOD_RULEBOOK.md
+```
+
+**Then add the per-project enumerations to `AI_Guidelines/codebase_rules.md`** so the new hard-locks have concrete scope. Suggested template additions:
+
+```markdown
+## Production-Flagged Targets (Section 2.3)
+
+The following are treated as production for the purposes of the Production Boundary hard-lock:
+
+- <e.g., `prod-db-01.example.com` — production database>
+- <e.g., `deploy/prod.yml` pipeline — pushes to live customer-facing service>
+- <e.g., outbound email to `*@customers.com` — real users>
+- <e.g., the `main` branch of `infra/terraform` — provisions paid cloud resources>
+
+Production actions require explicit, scoped authorization per Section 2.3 of the rulebook.
+
+## Sensitive Data Categories (Section 2.4)
+
+| Category | Examples | Anonymization placeholder |
+|---|---|---|
+| Personal identifiers | <e.g., names, emails, phone numbers> | `[PERSON]`, `[EMAIL]`, `[PHONE]` |
+| Financial identifiers | <e.g., IBANs, card numbers, internal account IDs> | `[ACCOUNT]`, masked digits (`****1234`) |
+| Internal operational data | <e.g., customer-facing ticket IDs, internal-only KPIs> | `[TICKET-N]`, `[METRIC]` |
+
+When sensitive data must be referenced for context (bug reproduction, analysis), replace values with placeholders. Logs that may contain sensitive data live outside git (`.gitignore`).
+
+## Privileged Tooling Wrappers (Section 7)
+
+| Wrapper | Replaces | Scope |
+|---|---|---|
+| <e.g., `scripts/db-shell.sh`> | <`psql` direct invocation> | <Database access — enforces read-only role and audit logging> |
+| <e.g., `scripts/deploy.sh`> | <`kubectl apply` direct> | <Deploys; pre-flight checks and slack notification> |
+| <e.g., `bin/secret-get`> | <`bao kv get` direct> | <Secret retrieval; sets correct vault path prefix> |
+
+When a wrapper is missing a feature or broken, the agent notifies the user and requests explicit authorization before falling through to the underlying CLI (Section 7 escape valve).
+
+## Verification Gates (Section 9)
+
+Default gates by task type:
+
+| Task type | Gate |
+|---|---|
+| Code change | <e.g., `pytest tests/` + `ruff check .`> |
+| Infrastructure change | <e.g., `terraform plan` reviewed + smoke check on staging> |
+| Documentation change | <e.g., `markdownlint` + render preview> |
+| Investigation (read-only) | Exit criterion: question recorded in `docs/findings/` with answer |
+
+For plan-driven tasks, the gate is the plan's `## Verification` section.
+
+## Cross-Repository Sync Points (Section 14)
+
+| Local sync point | Sibling repository | Effect |
+|---|---|---|
+| <e.g., `schemas/api.proto`> | <`https://github.com/<org>/api-client`> | <Regenerate client; bump version> |
+| <e.g., `infra/k8s/values.yaml`> | <`<org>/deploy-scripts`> | <Update deploy script reference> |
+
+When a change touches a sync point, the agent emits a `⚠️ CROSS-REPO IMPACT` notification before completing the task.
+
+## Issue Tracking — In-Repo Folders (Section 15, opt-in)
+
+If this project tracks bugs and features as folders in the repo:
+
+- **Bug folders:** `BUGS/<id>_<slug>/` — ID format `BUG-NNNN`
+- **Feature folders:** `FEATURES/<id>_<slug>/` — ID format `FEAT-NNNN`
+- **Required files:** `report.md` + `verification/` subfolder
+- **Optional files:** `analysis.md`, `artifacts/`
+- **Lifecycle states:** `open`, `investigating`, `in_progress`, `resolved`, `wont_fix`
+- **Conventional Commits scope:** `fix(BUG-NNNN): …`, `feat(FEAT-NNNN): …`
+- **External tracker mapping (if both used):** `BUG-NNNN` ↔ `<tracker-prefix>-NNNN` in `<tracker-name>`
+
+Sensitive data in `report.md` and `analysis.md` follows Section 2.4 anonymization rules.
+```
+
+If the project does not adopt §15 (issue folders), skip the last block. The other five blocks apply to any project.
+
 ---
 
 ## Quick Start (All-in-One)
@@ -797,7 +881,7 @@ touch AGENTS.md filetree.md planning_journal.md AI_Guidelines/codebase_rules.md 
 
 # 6. Initial commit
 git add -A
-git commit -m "chore: bootstrap Precision-MOD v2.1.0"
+git commit -m "chore: bootstrap Precision-MOD v2.2.0"
 ```
 
 Then populate `AGENTS.md`, `AI_Guidelines/codebase_rules.md`, `AI_SKILLS/INDEX.md`, `filetree.md`, and `planning_journal.md` with the templates from Section 5.
